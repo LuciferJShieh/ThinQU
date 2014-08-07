@@ -1,0 +1,278 @@
+<!DOCTYPE html>
+<html>
+<head>
+	<meta http-equiv="Content-Type" content="text/html; charset=gb18030"/>
+	<title> MyCollectionEditor </title>
+	<link rel="stylesheet" type="text/css" href="../css/editor.css" />
+	<link rel="stylesheet" type="text/css" href="css/comm.css" />
+	<script>
+		document.write('<script type="text/javascript" src="../release/editor.js"></', 'script>');
+	</script>
+
+    <script type="text/javascript" src="../release/editor_menu.js"></script>
+
+	<style>
+        html, body { overflow:hidden; }
+	</style>
+
+	<script type="text/javascript">
+	
+	window.onload = function()
+	{
+		QMEditorAdapter.gbIsFF && (document.domain = "qq.com");
+		window.a = QMEditor.createEditor({
+				editorId      : "editor",
+				tbExternId	  : "QMEditorToolBarPlusArea",
+				editorAreaId  : "QMEditorArea",
+				editorAreaWin : window,
+				isOpenEditBar : false,
+				nAutoRisizeMinHeight : 200,
+				funclist      : QMEditor.CONST.FUNCLIST.ORIGINAL,
+				isNoEditScroll: false,
+				onload : function() {
+                    var _oSelf = this;
+                    $('QMtitle').onfocus = function(e){
+
+                        if ( this.readOnly ) return;
+                        this.placeholder = "";
+                        this.setAttribute('aria-label', "标题");
+                    };
+
+                    $('QMtitle').onblur = function(e){
+
+                        if ( this.readOnly ) return;
+                        if ( !this.value.length ){
+                            this.placeholder = '标题';
+                            this.setAttribute('aria-label', "");
+                        }
+                    };
+
+                    window.menuAdaptor.initMenuAdaptor(
+                    [
+                        { label: "剪切", cmd: "cut" },
+                        { label: "复制", cmd: "copy" },
+                        { label: "粘贴", cmd: "paste"},
+                        { label: "粘贴为纯文本", cmd: "pasteastext"},
+                        { label: "全选", cmd: "allsel"}
+                    ]
+                    , _oSelf);
+				},
+                onautoscaleimage : function(_oSelf) {
+                    if ( _oSelf._msEditObjClientHeight != _oSelf._moEditObj.clientHeight ){
+                        _oSelf._msEditObjClientHeight = _oSelf._moEditObj.clientHeight;
+                    }
+                    if ( _oSelf._msEditObjClientWidth != _oSelf._moEditObj.clientWidth ){
+                        _oSelf._msEditObjClientWidth = _oSelf._moEditObj.clientWidth;
+                        var images = _oSelf._moEditDoc.images;
+                        for (var i in images ){
+                            _oSelf.autoScaleImg( images[i], images[i].src, true );
+                        }
+                    }
+                },
+                onpaste : function(oEvent) {
+
+                    var _clipboardData = oEvent.clipboardData;
+
+                    var _bHtml = false,
+                        _bFiles = false;
+                    for (var i in _clipboardData.types ){
+                        _bHtml =  (_clipboardData.types[i].toLowerCase().indexOf("html") != -1);
+                        _bFiles = (_clipboardData.types[i].toLowerCase().indexOf("files") != -1);
+                        if ( _bHtml ) break;
+                    }
+
+                    if ( _bHtml )
+                    {
+                        oEvent.preventDefault();
+                        oEvent.cancelBubble = true;
+
+                        var _data = _clipboardData.getData("text/html");
+
+                        _data = _data.replace("<!--StartFragment-->", "");
+                        _data = _data.replace("<!--EndFragment-->", "");
+
+                        //这里做下预处理，有时line-height: normal;会被神奇的扔掉了
+                        _data = this.commonRemoveTags(_data);
+                        _data = _data.replace(/<(\w[^>]*) id\s*=\s*["'][^"']*["']([^>]*)/gi, "<$1$2");
+                        _data = _data.replace(/<(\w[^>]*) name\s*=\s*["'][^"']*["']([^>]*)/gi, "<$1$2");
+                        _data = _data.replace(/<(\w[^>]*)[;\s\"]+width\s*:\s*[0-9]+\s*px\s*;([^>]*)/gi, '<$1$2');
+                        _data = _data.replace(/<(\w[^>]*)[;\s\"]+height\s*:\s*[0-9]+\s*px\s*;([^>]*)/gi, '<$1$2');
+                        _data = _data.replace(/(<span\sstyle=\"[^"]*)(\")/gi, "$1line-height: normal;$2");
+                        _data = _data.replace(/<(\w[^>]*) class\s*=\s*["'][^"']*["']([^>]*)/gi, "<$1$2");
+
+                        window.a._moEditWin.setTimeout(function()
+                        {
+                            var bOk = window.a._moEditDoc.execCommand("insertHTML", false, _data);
+                            if ( true == bOk ) {
+                                if ( -1 != _data.indexOf('img') ||
+                                     -1 != _data.indexOf('IMG') ){
+                                    window.a.doImgGenAbsPath();
+                                    window.setTimeout(function()
+                                    {
+                                        window.a.handleImageResource(true);
+                                    }, 1000);
+                                }
+                            }
+                        }, 100);
+
+                    }
+                    else if ( _bFiles )
+                    {
+                        oEvent.preventDefault();
+                        oEvent.cancelBubble = true;
+
+                        var _items = _clipboardData.items;
+                        for (var i = 0, len = _items.length; i < len; i++){
+                            if ( !_items[i].type.indexOf('image') ){
+
+                                // 来自剪切板的DataUri 数据的图片
+                                var _data = _items[i].getAsFile(),
+                                        _fileReader = new FileReader();
+
+                                _fileReader.onload = function(){
+                                    window.a.insertImage( this.result );
+                                    window.a.handleImageResource();
+                                };
+
+                                _fileReader.readAsDataURL(_data);
+                            }
+                        }
+                    }
+                },
+                onclick : function(_aoEvent) {
+                    var _oTarget = _aoEvent.target;
+                    while ( _oTarget ) {
+                        if ( _oTarget.tagName && _oTarget.tagName.match(/a/gi) ){
+                            if ( external && external.RequireOpenUrl ){
+                                _aoEvent.preventDefault();
+                                _aoEvent.stopPropagation();
+                                this.requireOpenUrl( _oTarget.href );
+                            }
+                        }
+                        _oTarget = _oTarget.parentNode;
+                    }
+                },
+                ondrop : function(_aoEvent) {
+                    _aoEvent.preventDefault();
+                    _aoEvent.stopPropagation();
+                }
+			});
+
+        function _parseArgs(_asUrl) {
+            var _oParams = {}, _nIndex = _asUrl.indexOf('?');
+            if ( _nIndex > -1 ) {
+                var _asParams = _asUrl.substr(_nIndex+1),
+                    _aParamsList= _asParams ? _asParams.split('&') : null;
+                if ( _aParamsList != null ) {
+                    for (var i in _aParamsList) {
+                        var _asParamsTuple = _aParamsList[i].split('=');
+                        _oParams[_asParamsTuple[0]] = _asParamsTuple[1];
+                    }
+                }
+            }
+            return _oParams;
+        }
+
+        var _oArgs = _parseArgs(location.href),
+            _bIsEmbed = Boolean(_oArgs['isEmbed']);
+        if ( _oArgs['pluginUrl'] ) {
+            console.log(["URL=",_oArgs['pluginUrl']].join(""));
+            a.initialize( _bIsEmbed, false, _oArgs['pluginUrl'], false, 0 );
+        } else {
+            a.initialize( _bIsEmbed, true, "", false, 0 );
+        }
+	};
+	window.document.onmousedown = function() {
+		QMEditor.hideEditorMenu();
+	};
+    window.document.onkeydown = function (e) {
+         if (e.keyCode == 116 || ( e.ctrlKey && e.keyCode == 82 ) )
+         {
+            e.cancelBubble = true;
+            return false;
+         }
+    };
+    MyCollection_getEditData = function()
+    {
+        window.a.handleImageResource();
+
+        var arrImgs = [];
+        var images = window.a._moEditDoc.images;
+        for (var i = 0, len = images.length; i < len; i++){
+            arrImgs.push( {
+                "id" : images[i].id,
+                "rawData" : images[i].src
+            } );
+
+            if ( images[i].id.match(/^img/gi) ) {
+                images[i].removeAttribute('id');
+                images[i].removeAttribute('name');
+            }
+        }
+
+        var title = window.a.getEditTitle();
+        var text  = window.a.getEditContent("html", true);
+        var html  = window.a.getEditContent("html");
+        var jsonData = {
+            "title": title,
+            "html" : window.a.commonRemoveTags(html),
+            "origText" : text.trim(),
+            "noblankText" : text.replace(/\s*/gi, "")
+        };
+
+        if ( arrImgs.length > 0 ){
+            jsonData["images"] = arrImgs;
+        }
+        return JSON.stringify(jsonData);
+    };
+    MyCollection_setHtmlTitle = function(_bsTitle) {
+        window.a.setEditTitle(_bsTitle);
+    };
+    MyCollection_setHtmlContent = function(_bsHtmlContent) {
+        window.a.setEditContent("html", _bsHtmlContent);
+        window.a.scrollTo(0);
+        var _oSelf = window.a,
+            _oEditDoc = window.a._moEditDoc;
+        if ( _oEditDoc.images.length > 0 ){
+            var images = _oEditDoc.images;
+            for (var i in images ){
+                _oSelf.autoScaleImg( images[i], images[i].src, false );
+            }
+        }
+    };
+    MyCollection_setAutoScaleImage = function(_asAutoScaleImage) {
+        window.a.setAutoScaleImage(_asAutoScaleImage);
+    };
+    MyCollection_setContentEditable = function(_bEditable) {
+        window.a.setContentEditableClient(_bEditable);
+    };
+    MyCollection_notifyFixupHeight = function() {
+         window.a.notifyFixupHeight();
+    };
+    MyCollection_execCmdOnMenu = function(_sCmd) {
+        _sCmd = _sCmd.toLowerCase();
+        window.menuAdaptor.execCmd(_sCmd);
+    };
+    MyCollection_replaceImgTag = function(json) {
+        window.a.replaceImgTag(json);
+    };
+    MyCollection_getCurImgID = function() {
+        return window.a.getCurImgID();
+    };
+    MyCollection_insertDropImgs = function(json) {
+        window.a.insertDropImgs(json);
+    };
+	</script>
+</head>
+
+<body style="height:100%;overflow:hidden;">
+
+<div class="editor_body">
+	<div style="height:30px;background:#edeeee;padding-top:5px;border-bottom:1px solid #d7d7d7;display: none;">
+		<span id="QMEditorToolBarPlusArea" style="display:block;"></span>
+	</div>
+	<div class="editor_area" id="QMEditorArea">
+	</div>
+</div>
+</body>
+</html>
